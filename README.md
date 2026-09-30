@@ -48,3 +48,17 @@ python -m app.cli smoke
 ```
 
 `check-db` 检查 SQLite 完整性和外键设置，`smoke` 在进程内调用健康接口并验证基础路由。项目不依赖外部数据库、消息队列或网络服务。
+
+## 保护中心异常响应
+
+`POST /api/anomaly/reports` 接收巡查员在水面、草甸和林缘的上报，按「地点类型 × 证据可信度 × 影响范围」矩阵叠加异常类型底线，生成 L1/L2/L3 分级事件并写入响应时限（默认 1440/240/60 分钟）与默认责任人。低可信线索进入待补证、不进派单队列；重复上报（指纹或 `related_incident_id`）并入原事件，`cross_incident_ids` 可把证据交叉关联到其他事件并触发交叉升级。
+
+处置接口包括 `assign`、`transfer`、`acknowledge`、`escalate`、`conclude`、`recheck`、`senior-review`、`close`、`reject`。关闭前按事件绑定版本的复核要求校验（L2 需他人现场复核、L3 还需高级签批）；每次升级、转交、结论和规则版本切换都写入 `anomaly_timeline` 哈希链（`GET /api/anomaly/incidents/{id}/chain` 校验），数据库触发器禁止修改或删除脉络记录。
+
+规则通过 `/api/anomaly/rule-versions` 整体发布；事件创建时绑定版本并保存分级快照，历史事件永远按旧规则解释，处理中事件须在 `POST /api/anomaly/incidents/{id}/rule-version` 中显式 `confirm` 才能切换。`GET /api/anomaly/dispatch-queue` 按等级和时限输出派单队列。
+
+```bash
+python -m app.cli anomaly-demo
+```
+
+该命令通过真实 HTTP 接口完成一组交叉升级与重复上报，并输出两个事件的等级、响应时限、当前责任人与哈希链校验结果。
